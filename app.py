@@ -5,11 +5,16 @@ from io import BytesIO
 from fpdf import FPDF
 import datetime
 
-# Importuj BOM generator ako postoji u istom folderu
+# Importovanje pomoćnih modula
 try:
     import bom_generator
 except ImportError:
     bom_generator = None
+
+try:
+    import room_calculator
+except ImportError:
+    room_calculator = None
 
 # --- PODEŠAVANJE APLIKACIJE ---
 st.set_page_config(page_title="Specifikacija Grejnih Instalacija Pro", layout="wide", page_icon="🔥")
@@ -18,7 +23,10 @@ st.title("🔥 Specifikacija Materijala za Grejne Instalacije (Pro)")
 
 # --- SIDEBAR CONFIGURATION ---
 st.sidebar.title("⚙️ Podešavanja & Meni")
-mode = st.sidebar.radio("Izaberi režim rada:", ["📋 Ručni unos / Specifikacija", "⚡ Automatski BOM Generator"])
+mode = st.sidebar.radio(
+    "Izaberi režim rada:", 
+    ["📋 Ručni unos / Specifikacija", "⚡ Automatski BOM Generator", "🌡️ Proračun Soba & Radijatora"]
+)
 
 st.sidebar.divider()
 
@@ -63,16 +71,16 @@ if "custom_db" not in st.session_state:
         {"Kategorija": "Kotlarnica i pumpe", "Podkategorija": "Sve", "Naziv": "Električni kotao 9kW", "JM": "kom", "Cena": 48000.0},
     ])
 
-# --- KLASA ZA PDF GENERISANJE SA SLIKOM ---
+# --- KLASA ZA PDF GENERISANJE ---
 class PDF(FPDF):
-    def __init__(self, logo_bytes=None):
+    def __init__(self, title_text='SPECIFIKACIJA MATERIJALA ZA GREJANJE', logo_bytes=None):
         super().__init__()
         self.logo_bytes = logo_bytes
+        self.title_text = title_text
 
     def header(self):
         if self.logo_bytes:
             try:
-                # Privremeno čuvanje logotipa radi ubacivanja u FPDF
                 with open("temp_logo.png", "wb") as f:
                     f.write(self.logo_bytes.getvalue())
                 self.image("temp_logo.png", 10, 8, 33)
@@ -80,7 +88,7 @@ class PDF(FPDF):
                 pass
         self.set_font('Helvetica', 'B', 15)
         self.set_text_color(26, 54, 93)
-        self.cell(0, 10, clean_text('SPECIFIKACIJA MATERIJALA ZA GREJANJE'), border=0, ln=True, align='C')
+        self.cell(0, 10, clean_text(self.title_text), border=0, ln=True, align='C')
         self.ln(5)
 
     def footer(self):
@@ -89,8 +97,9 @@ class PDF(FPDF):
         self.set_text_color(128, 128, 128)
         self.cell(0, 10, clean_text(f'Strana {self.page_no()}'), align='C')
 
+# --- PDF KLIJENTSKA PONUDA ---
 def create_pdf(investitor, objekat, datum, df, ukupno_bez_pdv, pdv_stopa, pdv_iznos, ukupno_sa_pdv, curr_label, logo_b):
-    pdf = PDF(logo_bytes=logo_b)
+    pdf = PDF(title_text='SPECIFIKACIJA MATERIJALA ZA GREJANJE', logo_bytes=logo_b)
     pdf.add_page()
     
     pdf.set_font('Helvetica', '', 10)
@@ -144,12 +153,67 @@ def create_pdf(investitor, objekat, datum, df, ukupno_bez_pdv, pdv_stopa, pdv_iz
     
     return bytes(pdf.output())
 
-# --- GLAVNI MENI ---
+# --- PDF RADNI NALOG ZA MONTERE ---
+def create_work_order_pdf(investitor, objekat, datum, df, napomena, logo_b):
+    pdf = PDF(title_text='RADNI NALOG / TEHNICKA SPECIFIKACIJA', logo_bytes=logo_b)
+    pdf.add_page()
+    
+    pdf.set_font('Helvetica', '', 10)
+    pdf.set_text_color(0, 0, 0)
+    pdf.cell(100, 6, clean_text(f"Investitor / Klijent: {investitor}"), ln=0)
+    pdf.cell(0, 6, clean_text(f"Datum izdavanja: {datum.strftime('%d.%m.%Y.')}"), ln=1, align='R')
+    pdf.cell(0, 6, clean_text(f"Lokacija / Objekat: {objekat}"), ln=1)
+    pdf.ln(8)
+    
+    pdf.set_font('Helvetica', 'B', 9)
+    pdf.set_fill_color(44, 62, 80)
+    pdf.set_text_color(255, 255, 255)
+    
+    pdf.cell(15, 8, clean_text("R.b."), border=1, align='C', fill=True)
+    pdf.cell(130, 8, clean_text("Naziv opreme / Pozicija ugradnje"), border=1, align='L', fill=True)
+    pdf.cell(20, 8, clean_text("J.M."), border=1, align='C', fill=True)
+    pdf.cell(25, 8, clean_text("Kolicina"), border=1, align='R', fill=True)
+    pdf.ln()
+    
+    pdf.set_font('Helvetica', '', 9)
+    pdf.set_text_color(0, 0, 0)
+    fill = False
+    
+    for _, row in df.iterrows():
+        pdf.set_fill_color(245, 247, 250)
+        pdf.cell(15, 7, clean_text(str(int(row['R.b.']))), border=1, align='C', fill=fill)
+        pdf.cell(130, 7, clean_text(str(row['Naziv materijala'])), border=1, align='L', fill=fill)
+        pdf.cell(20, 7, clean_text(str(row['Jedinica mere'])), border=1, align='C', fill=fill)
+        pdf.cell(25, 7, f"{row['Količina']:,.2f}", border=1, align='R', fill=fill)
+        pdf.ln()
+        fill = not fill
+        
+    pdf.ln(10)
+    
+    if napomena:
+        pdf.set_font('Helvetica', 'B', 10)
+        pdf.cell(0, 6, clean_text("Tehnicke napomene i instrukcije:"), ln=1)
+        pdf.set_font('Helvetica', '', 9)
+        pdf.multi_cell(0, 5, clean_text(napomena), border=1)
+        pdf.ln(15)
+        
+    pdf.set_font('Helvetica', '', 9)
+    pdf.cell(90, 6, clean_text("Radove izveo (Potpis montera): __________________"), ln=0)
+    pdf.cell(0, 6, clean_text("Opremu preuzeo / Potvrdio: __________________"), ln=1, align='R')
+    
+    return bytes(pdf.output())
+
+# --- ROUTING REŽIMA RADA ---
 if mode == "⚡ Automatski BOM Generator":
     if bom_generator:
         bom_generator.render_bom_page()
     else:
         st.error("Fajl 'bom_generator.py' nije pronađen u istom folderu!")
+elif mode == "🌡️ Proračun Soba & Radijatora":
+    if room_calculator:
+        room_calculator.render_room_calculator()
+    else:
+        st.error("Fajl 'room_calculator.py' nije pronađen u istom folderu!")
 else:
     # --- 1. PROJEKTI: UČITAVANJE / ČUVANJE (JSON) ---
     with st.expander("📂 Upravljanje Projektima (Save / Load Project)", expanded=False):
@@ -176,7 +240,6 @@ else:
         with col_p3:
             datum = st.date_input("Datum izrade", datetime.date.today())
 
-        # Download projekta u JSON-u
         proj_dict = {
             "investitor": investitor,
             "objekat": objekat,
@@ -265,11 +328,9 @@ else:
         df = pd.DataFrame(st.session_state["lista_stavki"])
         df["R.b."] = range(1, len(df) + 1)
         
-        # Konverzija cena u izabranu valutu za prikaz
         df["Cena"] = df["Cena bez PDV (RSD)"] if valuta == "RSD" else (df["Cena bez PDV (RSD)"] / kurs_eur).round(2)
         df["Ukupno"] = (df["Količina"] * df["Cena"]).round(2)
         
-        # Prikazivanje tabele za izmenu
         edited_df = st.data_editor(
             df[["R.b.", "Naziv materijala", "Jedinica mere", "Količina", "Cena", "Ukupno"]],
             num_rows="dynamic",
@@ -293,47 +354,56 @@ else:
         
         st.divider()
 
-        # --- 5. GRAFIČKI PRIKAZ TROŠKOVA (COST BREAKDOWN CHART) ---
-        st.subheader("📈 Analiza Troškova po Kategorijama")
-        if "Kategorija" in df.columns:
-            chart_data = df.groupby("Kategorija")["Ukupno"].sum().reset_index()
-            st.bar_chart(chart_data, x="Kategorija", y="Ukupno", use_container_width=True)
+        # --- 5. TEHNIČKA NAPOMENA ZA RADNI NALOG ---
+        st.subheader("📝 Napomena za Radni Nalog Montera")
+        radni_nalog_napomena = st.text_area(
+            "Uputstva za montažu (npr. 'Ispitati pritisak na 6 bar', 'Montirati razdelnik u hodniku na visini 60cm')",
+            value="Obavezno izvršiti pritisnu probu pre zatvaranja kanala i estriha."
+        )
 
         st.divider()
-        
+
         # --- 6. IZVOZ PODATAKA ---
+        st.subheader("📥 Preuzimanje Dokumenata")
         col_exp1, col_exp2, col_exp3 = st.columns([1, 1, 1])
         
-        # Excel izvoz
+        pdf_ponuda = create_pdf(investitor, objekat, datum, edited_df, ukupno_bez_pdv, pdv_stopa, pdv_iznos, ukupno_sa_pdv, valuta, logo_file)
+        with col_exp1:
+            st.download_button(
+                label="📄 PDF Ponuda (sa cenama)",
+                data=pdf_ponuda,
+                file_name=f"Ponuda_{investitor.replace(' ', '_')}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+
+        pdf_nalog = create_work_order_pdf(investitor, objekat, datum, edited_df, radni_nalog_napomena, logo_file)
+        with col_exp2:
+            st.download_button(
+                label="🔧 Radni Nalog za Montere",
+                data=pdf_nalog,
+                file_name=f"Radni_Nalog_{investitor.replace(' ', '_')}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+
         excel_output = BytesIO()
         with pd.ExcelWriter(excel_output, engine='xlsxwriter') as writer:
             edited_df.to_excel(writer, sheet_name="Specifikacija", index=False)
 
-        with col_exp1:
+        with col_exp3:
             st.download_button(
-                label=f"📥 Preuzmi Excel ({valuta})",
+                label=f"📊 Excel (.xlsx)",
                 data=excel_output.getvalue(),
                 file_name=f"Specifikacija_{investitor.replace(' ', '_')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
 
-        # PDF Izvoz sa logom
-        pdf_data = create_pdf(investitor, objekat, datum, edited_df, ukupno_bez_pdv, pdv_stopa, pdv_iznos, ukupno_sa_pdv, valuta, logo_file)
-
-        with col_exp2:
-            st.download_button(
-                label="📄 Preuzmi PDF Ponudu",
-                data=pdf_data,
-                file_name=f"Specifikacija_{investitor.replace(' ', '_')}.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
-            
-        with col_exp3:
-            if st.button("🗑️ Očisti celu tabelu", use_container_width=True):
-                st.session_state["lista_stavki"] = []
-                st.rerun()
+        st.divider()
+        if st.button("🗑️ Očisti celu tabelu", use_container_width=True):
+            st.session_state["lista_stavki"] = []
+            st.rerun()
 
     else:
-        st.info("Specifikacija je trenutno prazna. Dodajte stavke ili generišite iz BOM generatora.")
+        st.info("Specifikacija je trenutno prazna. Dodajte stavke ručno ili generišite preko BOM / Room kalkulatora.")
