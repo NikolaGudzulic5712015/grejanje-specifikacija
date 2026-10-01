@@ -5,7 +5,7 @@ from io import BytesIO
 from fpdf import FPDF
 import datetime
 
-# Importovanje pomoćnih modula
+# --- IMPORTUJEMO SVE DODATNE MODULE ---
 try:
     import bom_generator
 except ImportError:
@@ -16,6 +16,11 @@ try:
 except ImportError:
     room_calculator = None
 
+try:
+    import doming_scraper
+except ImportError:
+    doming_scraper = None
+
 # --- PODEŠAVANJE APLIKACIJE ---
 st.set_page_config(page_title="Specifikacija Grejnih Instalacija Pro", layout="wide", page_icon="🔥")
 
@@ -25,7 +30,12 @@ st.title("🔥 Specifikacija Materijala za Grejne Instalacije (Pro)")
 st.sidebar.title("⚙️ Podešavanja & Meni")
 mode = st.sidebar.radio(
     "Izaberi režim rada:", 
-    ["📋 Ručni unos / Specifikacija", "⚡ Automatski BOM Generator", "🌡️ Proračun Soba & Radijatora"]
+    [
+        "📋 Ručni unos / Specifikacija", 
+        "⚡ Automatski BOM Generator", 
+        "🌡️ Proračun Soba & Radijatora",
+        "🌐 Uvoz sa Doming.rs"
+    ]
 )
 
 st.sidebar.divider()
@@ -153,7 +163,7 @@ def create_pdf(investitor, objekat, datum, df, ukupno_bez_pdv, pdv_stopa, pdv_iz
     
     return bytes(pdf.output())
 
-# --- PDF RADNI NALOG ZA MONTERE ---
+# --- PDF RADNI NALOG ZA MONTERE (BEZ CENA) ---
 def create_work_order_pdf(investitor, objekat, datum, df, napomena, logo_b):
     pdf = PDF(title_text='RADNI NALOG / TEHNICKA SPECIFIKACIJA', logo_bytes=logo_b)
     pdf.add_page()
@@ -214,6 +224,11 @@ elif mode == "🌡️ Proračun Soba & Radijatora":
         room_calculator.render_room_calculator()
     else:
         st.error("Fajl 'room_calculator.py' nije pronađen u istom folderu!")
+elif mode == "🌐 Uvoz sa Doming.rs":
+    if doming_scraper:
+        doming_scraper.render_doming_sync_ui()
+    else:
+        st.error("Fajl 'doming_scraper.py' nije pronađen u istom folderu!")
 else:
     # --- 1. PROJEKTI: UČITAVANJE / ČUVANJE (JSON) ---
     with st.expander("📂 Upravljanje Projektima (Save / Load Project)", expanded=False):
@@ -406,4 +421,4 @@ else:
             st.rerun()
 
     else:
-        st.info("Specifikacija je trenutno prazna. Dodajte stavke ručno ili generišite preko BOM / Room kalkulatora.")
+        st.info("Specifikacija je trenutno prazna. Dodajte stavke ručno ili generišite preko BOM / Room / Doming kalkulatora.")
