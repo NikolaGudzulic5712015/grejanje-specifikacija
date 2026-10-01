@@ -8,18 +8,21 @@ import datetime
 # --- IMPORTUJEMO SVE DODATNE MODULE ---
 try:
     import bom_generator
-except ImportError:
+except Exception as e:
     bom_generator = None
+    st.sidebar.error(f"Greska u bom_generator: {e}")
 
 try:
     import room_calculator
-except ImportError:
+except Exception as e:
     room_calculator = None
+    st.sidebar.error(f"Greska u room_calculator: {e}")
 
 try:
     import doming_scraper
-except ImportError:
+except Exception as e:
     doming_scraper = None
+    st.sidebar.error(f"Greska u doming_scraper: {e}")
 
 # --- PODEŠAVANJE APLIKACIJE ---
 st.set_page_config(page_title="Specifikacija Grejnih Instalacija Pro", layout="wide", page_icon="🔥")
