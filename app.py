@@ -10,19 +10,19 @@ try:
     import bom_generator
 except Exception as e:
     bom_generator = None
-    st.sidebar.error(f"Greska u bom_generator: {e}")
+    st.sidebar.error(f"Greška u bom_generator: {e}")
 
 try:
     import room_calculator
 except Exception as e:
     room_calculator = None
-    st.sidebar.error(f"Greska u room_calculator: {e}")
+    st.sidebar.error(f"Greška u room_calculator: {e}")
 
 try:
     import doming_scraper
 except Exception as e:
     doming_scraper = None
-    st.sidebar.error(f"Greska u doming_scraper: {e}")
+    st.sidebar.error(f"Greška u doming_scraper: {e}")
 
 # --- PODEŠAVANJE APLIKACIJE ---
 st.set_page_config(page_title="Specifikacija Grejnih Instalacija Pro", layout="wide", page_icon="🔥")
@@ -37,7 +37,7 @@ mode = st.sidebar.radio(
         "📋 Ručni unos / Specifikacija", 
         "⚡ Automatski BOM Generator", 
         "🌡️ Proračun Soba & Radijatora",
-        "🌐 Uvoz sa Doming.rs"
+        "🌐 Uvoz sa OpremaZaGrejanje.rs"
     ]
 )
 
@@ -227,7 +227,7 @@ elif mode == "🌡️ Proračun Soba & Radijatora":
         room_calculator.render_room_calculator()
     else:
         st.error("Fajl 'room_calculator.py' nije pronađen u istom folderu!")
-elif mode == "🌐 Uvoz sa Doming.rs":
+elif mode == "🌐 Uvoz sa OpremaZaGrejanje.rs":
     if doming_scraper:
         doming_scraper.render_doming_sync_ui()
     else:
@@ -273,69 +273,96 @@ else:
 
     st.divider()
 
-    # --- 3. UNOS STAVKI ---
-    st.subheader("➕ Dodavanje materijala")
-    db = st.session_state["custom_db"]
-    kategorije = ["Ručni unos"] + sorted(list(db["Kategorija"].dropna().unique()))
+    # --- 3. PAMETNA PRETRAGA I DODAVANJE MATERIJALA ---
+    st.subheader("🔍 Pametna Pretraga & Dodavanje Materijala")
+    db = st.session_state["custom_db"].copy()
 
-    col_k1, col_k2 = st.columns(2)
-    with col_k1:
-        kategorija_sel = st.selectbox("1. Kategorija", kategorije)
+    # Opcije filtriranja
+    col_f1, col_f2 = st.columns([2, 2])
+    
+    sve_kategorije = ["Sve kategorije", "Ručni unos"] + sorted(list(db["Kategorija"].dropna().unique()))
+    with col_f1:
+        kat_filter = st.selectbox("📁 Filtriraj po kategoriji:", sve_kategorije)
 
-    podkategorija_sel = "Sve"
-    if kategorija_sel != "Ručni unos":
-        sub_db = db[db["Kategorija"] == kategorija_sel]
-        podkategorije = sorted(list(sub_db["Podkategorija"].dropna().unique()))
-        if len(podkategorije) > 1 or (len(podkategorije) == 1 and podkategorije[0] != "Sve"):
-            with col_k2:
-                podkategorija_sel = st.selectbox("2. Tip / Podkategorija", podkategorije)
-
-    col1, col2, col3, col4 = st.columns([3, 1, 1.5, 1.5])
-    if kategorija_sel == "Ručni unos":
+    if kat_filter == "Ručni unos":
+        col1, col2, col3, col4 = st.columns([3, 1, 1.5, 1.5])
         with col1:
             naziv = st.text_input("Naziv materijala / opreme")
         with col2:
             jedinica = st.selectbox("J.M.", ["m", "kom", "set", "kg", "l", "paušal"])
+        with col3:
+            kolicina = st.number_input("Količina", min_value=0.01, value=1.0, step=1.0)
         with col4:
             cena_input = st.number_input(f"Cena po J.M. ({valuta})", min_value=0.0, value=0.0, step=50.0)
             cena_rsd = cena_input if valuta == "RSD" else cena_input * kurs_eur
+
+        if st.button("➕ Dodaj ručnu stavku u specifikaciju", type="primary", use_container_width=True):
+            if not naziv or str(naziv).strip() == "":
+                st.error("Unesite validan naziv materijala.")
+            else:
+                nova_stavka = {
+                    "R.b.": len(st.session_state["lista_stavki"]) + 1,
+                    "Kategorija": "Ručni unos",
+                    "Naziv materijala": naziv,
+                    "Jedinica mere": jedinica,
+                    "Količina": float(kolicina),
+                    "Cena bez PDV (RSD)": float(cena_rsd),
+                }
+                st.session_state["lista_stavki"].append(nova_stavka)
+                st.toast(f"Dodato: {naziv}", icon="✅")
+                st.rerun()
+
     else:
-        filtered_db = db[(db["Kategorija"] == kategorija_sel) & (db["Podkategorija"] == podkategorija_sel)]
-        if filtered_db.empty:
-            filtered_db = db[db["Kategorija"] == kategorija_sel]
-
-        with col1:
-            naziv = st.selectbox("3. Izaberi stavku / dimenziju", filtered_db["Naziv"].unique())
-        
-        item_info = filtered_db[filtered_db["Naziv"] == naziv].iloc[0]
-        default_jm = str(item_info["JM"])
-        default_cena_rsd = float(item_info["Cena"])
-        default_cena_display = default_cena_rsd if valuta == "RSD" else round(default_cena_rsd / kurs_eur, 2)
-        
-        with col2:
-            jedinica = st.text_input("J.M.", value=default_jm)
-        with col4:
-            cena_input = st.number_input(f"Cena po J.M. ({valuta})", min_value=0.0, value=default_cena_display, step=1.0)
-            cena_rsd = cena_input if valuta == "RSD" else cena_input * kurs_eur
-
-    with col3:
-        kolicina = st.number_input("Količina", min_value=0.01, value=1.0, step=1.0)
-
-    if st.button("Dodaj u specifikaciju", use_container_width=True, type="primary"):
-        if not naziv or str(naziv).strip() == "":
-            st.error("Unesite validan naziv materijala.")
+        # Filtriranje po kategoriji ako je izabrana
+        if kat_filter != "Sve kategorije":
+            db_filtered = db[db["Kategorija"] == kat_filter]
         else:
-            nova_stavka = {
-                "R.b.": len(st.session_state["lista_stavki"]) + 1,
-                "Kategorija": kategorija_sel,
-                "Naziv materijala": naziv,
-                "Jedinica mere": jedinica,
-                "Količina": float(kolicina),
-                "Cena bez PDV (RSD)": float(cena_rsd),
-            }
-            st.session_state["lista_stavki"].append(nova_stavka)
-            st.toast(f"Dodato: {naziv}", icon="✅")
-            st.rerun()
+            db_filtered = db.copy()
+
+        with col_f2:
+            search_query = st.text_input("🔎 Pametna pretraga (kucajte pojam, npr. '22 600', 'alupex', '25-60'):", value="")
+
+        # Filtriranje teksta po više reči (multi-word match)
+        if search_query.strip():
+            keywords = search_query.lower().split()
+            for kw in keywords:
+                db_filtered = db_filtered[db_filtered["Naziv"].str.lower().str.contains(kw, na=False)]
+
+        st.caption(f"Pronađeno artikala u bazi: **{len(db_filtered)}**")
+
+        if not db_filtered.empty:
+            col_sel1, col_sel2, col_sel3, col_sel4 = st.columns([3.5, 1, 1.5, 1.5])
+            
+            with col_sel1:
+                selected_naziv = st.selectbox("Izaberi artikal iz filtrirane liste:", db_filtered["Naziv"].unique())
+            
+            item_info = db_filtered[db_filtered["Naziv"] == selected_naziv].iloc[0]
+            default_jm = str(item_info["JM"])
+            default_cena_rsd = float(item_info["Cena"])
+            default_cena_display = default_cena_rsd if valuta == "RSD" else round(default_cena_rsd / kurs_eur, 2)
+            
+            with col_sel2:
+                jedinica = st.text_input("J.M.", value=default_jm)
+            with col_sel3:
+                kolicina = st.number_input("Količina", min_value=0.01, value=1.0, step=1.0, key="smart_qty")
+            with col_sel4:
+                cena_input = st.number_input(f"Cena ({valuta})", min_value=0.0, value=default_cena_display, step=1.0, key="smart_price")
+                cena_rsd = cena_input if valuta == "RSD" else cena_input * kurs_eur
+
+            if st.button("➕ Dodaj izabrani artikal u specifikaciju", type="primary", use_container_width=True):
+                nova_stavka = {
+                    "R.b.": len(st.session_state["lista_stavki"]) + 1,
+                    "Kategorija": str(item_info["Kategorija"]),
+                    "Naziv materijala": selected_naziv,
+                    "Jedinica mere": jedinica,
+                    "Količina": float(kolicina),
+                    "Cena bez PDV (RSD)": float(cena_rsd),
+                }
+                st.session_state["lista_stavki"].append(nova_stavka)
+                st.toast(f"Dodato: {selected_naziv}", icon="✅")
+                st.rerun()
+        else:
+            st.warning("Nijedan artikal u bazi ne odgovara unesenom pojmu za pretragu. Uvezite nove artikle preko opcije '🌐 Uvoz sa OpremaZaGrejanje.rs'.")
 
     st.divider()
 
@@ -424,4 +451,4 @@ else:
             st.rerun()
 
     else:
-        st.info("Specifikacija je trenutno prazna. Dodajte stavke ručno ili generišite preko BOM / Room / Doming kalkulatora.")
+        st.info("Specifikacija je trenutno prazna. Dodajte stavke ručno ili generišite preko BOM / Room / Web kalkulatora.")
