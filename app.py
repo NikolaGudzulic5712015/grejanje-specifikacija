@@ -24,6 +24,12 @@ except Exception as e:
     doming_scraper = None
     st.sidebar.error(f"Greška u doming_scraper: {e}")
 
+try:
+    import master_dashboard
+except Exception as e:
+    master_dashboard = None
+    st.sidebar.error(f"Greška u master_dashboard: {e}")
+
 # --- PODEŠAVANJE APLIKACIJE ---
 st.set_page_config(page_title="Specifikacija Grejnih Instalacija Pro", layout="wide", page_icon="🔥")
 
@@ -35,6 +41,7 @@ mode = st.sidebar.radio(
     "Izaberi režim rada:", 
     [
         "📋 Unos Specifikacije (Materijal & Radovi)", 
+        "👷 Majstorski Panel / CRM",
         "⚡ Automatski BOM Generator", 
         "🌡️ Proračun Soba & Radijatora",
         "🌐 Uvoz sa OpremaZaGrejanje.rs"
@@ -254,6 +261,11 @@ elif mode == "🌐 Uvoz sa OpremaZaGrejanje.rs":
         doming_scraper.render_doming_sync_ui()
     else:
         st.error("Fajl 'doming_scraper.py' nije pronađen u istom folderu!")
+elif mode == "👷 Majstorski Panel / CRM":
+    if master_dashboard:
+        master_dashboard.render_master_dashboard()
+    else:
+        st.error("Fajl 'master_dashboard.py' nije pronađen u folderu!")
 else:
     # --- 1. PROJEKTI: UČITAVANJE / ČUVANJE (JSON) ---
     with st.expander("📂 Upravljanje Projektima (Save / Load Project)", expanded=False):
